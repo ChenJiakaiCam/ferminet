@@ -934,6 +934,25 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
   time_of_last_ckpt = time.time()
   weighted_stats = None
 
+  # Patch for Ctrl+C checkpointing
+  import signal
+  import sys
+
+  def handle_sigint(sig, frame):
+      logging.info('Received SIGINT (Ctrl+C). Saving checkpoint and exiting gracefully...')
+      try:
+          writer.flush()
+      except NameError:
+          pass
+      try:
+          t_val = t
+      except NameError:
+          t_val = t_init
+      checkpoint.save(ckpt_save_path, t_val, data, params, opt_state, mcmc_width)
+      sys.exit(130)
+
+  signal.signal(signal.SIGINT, handle_sigint)
+
   if cfg.optim.optimizer == 'none' and opt_state_ckpt is not None:
     # If opt_state_ckpt is None, then we're restarting from a previous inference
     # run (most likely due to preemption) and so should continue from the last
@@ -1065,6 +1084,9 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
         writer.flush()
         checkpoint.save(ckpt_save_path, t, data, params, opt_state, mcmc_width)
         time_of_last_ckpt = time.time()
+
+    writer.flush()
+    checkpoint.save(ckpt_save_path, cfg.optim.iterations, data, params, opt_state, mcmc_width)
 
     # Shut down logging at end
     if cfg.system.states:
