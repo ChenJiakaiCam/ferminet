@@ -1,6 +1,7 @@
 import sys
 import site
 import os
+import re
 
 def patch_kfac_jax():
     site_packages_dirs = site.getsitepackages()
@@ -78,6 +79,27 @@ def get_device_n_contents(obj: TArrayTree, n: int) -> TArrayTree:
     if start_idx != -1 and end_idx != -1:
         content = content[:start_idx] + new_code + content[end_idx:]
 
+    content = re.sub(
+        r'sharding = jax\.NamedSharding\(mesh, jax\.P\(axis_name\)\)',
+        r'sharding = jax.NamedSharding(mesh, jax.sharding.PartitionSpec(axis_name))',
+        content
+    )
+
+    content = re.sub(
+        r'mesh = jax\.sharding\.Mesh\(devices, \(axis_name,\)\)\n\s*sharding = jax\.NamedSharding\(mesh, jax\.sharding\.PartitionSpec\(axis_name\)\)',
+        r'try:\n    mesh = jax.sharding.Mesh(devices, (axis_name,))\n    sharding = jax.NamedSharding(mesh, jax.sharding.PartitionSpec(axis_name))\n  except TypeError:\n    import numpy as np\n    mesh = jax.sharding.Mesh(np.array(devices), (axis_name,))\n    sharding = jax.NamedSharding(mesh, jax.sharding.PartitionSpec(axis_name))',
+        content
+    )
+
+    content = re.sub(
+        r'return jax\.device_put_replicated\(obj, devices=devices\)',
+        r'''try:
+      return jax.device_put_replicated(obj, devices=devices)
+    except AttributeError:
+      return jax.device_put(jax.tree_util.tree_map(lambda x: jax.numpy.stack([x] * len(devices)), obj), jax.NamedSharding(jax.sharding.Mesh(__import__('numpy').array(devices), ('d',)), jax.sharding.PartitionSpec('d')))''',
+        content
+    )
+
     # Also patch optimizer
     optimizer_path = os.path.join(os.path.dirname(parallel_path), '..', 'optimizer.py')
     if os.path.exists(optimizer_path):
@@ -96,7 +118,6 @@ def get_device_n_contents(obj: TArrayTree, n: int) -> TArrayTree:
           else:
               return int(val[0])"""
 
-        import re
         opt_content = re.sub(
             r'      return int\(self\.get_first\(step_counter\)\)',
             opt_patch,

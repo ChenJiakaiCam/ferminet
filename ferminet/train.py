@@ -947,8 +947,16 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       try:
           t_val = t
       except NameError:
-          t_val = t_init
-      checkpoint.save(ckpt_save_path, t_val, data, params, opt_state, mcmc_width)
+          try:
+              t_val = t_init
+          except NameError:
+              t_val = 0
+
+      try:
+          checkpoint.save(ckpt_save_path, t_val, data, params, opt_state, mcmc_width)
+      except NameError:
+          logging.info('Variables not initialized yet. Skipping checkpoint save.')
+
       sys.exit(130)
 
   signal.signal(signal.SIGINT, handle_sigint)
