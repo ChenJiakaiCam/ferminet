@@ -953,7 +953,8 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
               t_val = 0
 
       try:
-          checkpoint.save(ckpt_save_path, t_val, data, params, opt_state, mcmc_width)
+          if jax.process_index() == 0:
+              checkpoint.save(ckpt_save_path, t_val, data, params, opt_state, mcmc_width)
       except NameError:
           logging.info('Variables not initialized yet. Skipping checkpoint save.')
 
@@ -1090,11 +1091,13 @@ def train(cfg: ml_collections.ConfigDict, writer_manager=None):
       # Checkpointing
       if time.time() - time_of_last_ckpt > cfg.log.save_frequency * 60:
         writer.flush()
-        checkpoint.save(ckpt_save_path, t, data, params, opt_state, mcmc_width)
+        if jax.process_index() == 0:
+          checkpoint.save(ckpt_save_path, t, data, params, opt_state, mcmc_width)
         time_of_last_ckpt = time.time()
 
     writer.flush()
-    checkpoint.save(ckpt_save_path, cfg.optim.iterations, data, params, opt_state, mcmc_width)
+    if jax.process_index() == 0:
+      checkpoint.save(ckpt_save_path, cfg.optim.iterations, data, params, opt_state, mcmc_width)
 
     # Shut down logging at end
     if cfg.system.states:
